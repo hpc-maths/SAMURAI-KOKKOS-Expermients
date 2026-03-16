@@ -47,11 +47,24 @@ project = symgen.Project("SAMURAI-KOKKOS-Expermients") \
 	\
 	.add_dependency(symgen.Package("samurai") \
 		.set_git("git@github.com:hpc-maths/samurai.git", "main")) \
-	.add_dependency(symgen.Package("Kokkos")) \
+	.add_dependency(symgen.Package("Kokkos", "Kokkos")) \
 	\
 	.add_executable(symgen.Executable("samurai_with_kokkos") \
 		.add_source("src/main.cpp") \
 		.add_dependency("samurai") \
-		.add_dependency("Kokkos::kokkos"))
+		.add_dependency("Kokkos", "kokkos"))
+		
+benchmarks = symgen.SubDirectory("benchmarks") \
+	.add_dependency(symgen.Package("benchmark")) \
+	.add_executable(symgen.Executable("benchmark_axpy") \
+		.add_source("src/benchmark_axpy.cpp")
+		.add_dependency("samurai") \
+		.add_dependency("Kokkos", "kokkos") \
+		.add_dependency("benchmark::benchmark")) \
+
+project.add_sub_directory(benchmarks)
 
 project.to_cmake_lists("CMakeLists.txt")
+
+for subdir in project.get_sub_directories():
+	subdir.to_cmake_lists(subdir.get_name() + "/CMakeLists.txt")

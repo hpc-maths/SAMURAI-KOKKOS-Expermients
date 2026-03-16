@@ -1,0 +1,42 @@
+########################################################################
+####                    benchmarks subdirectory                     ####
+########################################################################
+
+########################################################################
+####                          Dependencies                          ####
+########################################################################
+
+find_package(benchmark REQUIRED)
+
+include(FetchContent)
+
+########################################################################
+####                            Targets                             ####
+########################################################################
+
+add_library(benchmarks_include INTERFACE)
+
+add_executable(benchmark_axpy)
+
+########################################################################
+####                            Sources                             ####
+########################################################################
+
+target_sources(benchmark_axpy PRIVATE src/benchmark_axpy.cpp)
+
+target_include_directories(benchmarks_include INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
+
+########################################################################
+####                      Compile Definitions                       ####
+########################################################################
+
+########################################################################
+####                              Link                              ####
+########################################################################
+
+target_link_libraries(benchmark_axpy
+	PRIVATE benchmarks_include
+	PRIVATE samurai
+	PRIVATE Kokkos::kokkos
+	PRIVATE benchmark::benchmark)
+

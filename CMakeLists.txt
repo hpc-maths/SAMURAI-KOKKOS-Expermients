@@ -57,6 +57,7 @@ set(SAMURAI_KOKKOS_COMMON_COMPILE_OPTIONS
 	-Wno-error=null-dereference
 	-Wno-error=maybe-uninitialized
 	-Wno-error=sign-conversion
+	-fopenmp
 	-Wundef
 	-Wvarargs
 	-Wall
@@ -120,6 +121,8 @@ FetchContent_MakeAvailable(samurai)
 ########################################################################
 ####                         SubDirectories                         ####
 ########################################################################
+
+add_subdirectory(benchmarks)
 
 ########################################################################
 ####                            Targets                             ####
