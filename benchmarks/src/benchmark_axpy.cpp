@@ -14,6 +14,10 @@ namespace fs = std::filesystem;
 
 #include <Kokkos_Core.hpp>
 
+////////////////////////////////////////////////////////////////////////
+//// Helper functions
+////////////////////////////////////////////////////////////////////////
+
 template <std::size_t dim>
 auto init_uniform_mesh()
 {
@@ -94,6 +98,20 @@ auto init_mesh(double eps, std::size_t direction, std::size_t nb)
     samurai::save(std::filesystem::current_path(), fmt::format("initial_mesh_{}_{}_{}", eps, direction, nb), mesh);
     return mesh;
 }
+
+template<samurai::mesh_like Mesh>
+auto get_subset(const Mesh& mesh, const std::size_t level)
+{
+	using mesh_id_t = typename Mesh::mesh_id_t;
+	
+	return samurai::intersection(
+		mesh[mesh_id_t::all_cells][level],
+		samurai::union_(mesh[mesh_id_t::cells][level + 1], mesh[mesh_id_t::cells][level + 2])).on(level);	
+}
+
+////////////////////////////////////////////////////////////////////////
+//// axpy on the whole mesh
+////////////////////////////////////////////////////////////////////////
 
 void axpy_samurai(benchmark::State& state)
 {
@@ -251,6 +269,167 @@ BENCHMARK(axpy_samurai_stl);
 BENCHMARK(axpy_full);
 BENCHMARK(axpy_all_offsets);
 BENCHMARK(axpy_offsets_and_sizes);
+
+////////////////////////////////////////////////////////////////////////
+//// axpy on subset
+////////////////////////////////////////////////////////////////////////
+
+void subset_axpy_samurai(benchmark::State& state)
+{
+	auto mesh = init_mesh<2>(1.e-4, 0, 1);
+	
+	const auto a = samurai::make_scalar_field("a", mesh);
+	auto b = samurai::make_scalar_field("b", mesh);
+	
+	const double alpha = 2.;
+	
+	for (auto _ : state)
+	{
+		for (std::size_t level = ((mesh.min_level() > 0) ? mesh.min_level() - 1 : 0); level < mesh.max_level(); ++level)
+		{
+			const auto subset = get_subset(mesh, level);
+			
+			subset([&](const auto& interval, const auto& index)
+			{
+				const auto offset = samurai::memory_offset(mesh, {level, interval.start, index});
+				for (size_t i=0; i!=interval.size(); ++i)
+				{
+					b[i + offset] += alpha*a[i + offset];
+				}
+			});
+		}
+	}
+}
+
+void subset_axpy_samurai_stl(benchmark::State& state)
+{
+	auto mesh = init_mesh<2>(1.e-4, 0, 1);
+	
+	const auto a = samurai::make_scalar_field("a", mesh);
+	auto b = samurai::make_scalar_field("b", mesh);
+	
+	const double alpha = 2.;
+	
+	for (auto _ : state)
+	{
+		for (std::size_t level = ((mesh.min_level() > 0) ? mesh.min_level() - 1 : 0); level < mesh.max_level(); ++level)
+		{
+			const auto subset = get_subset(mesh, level);
+			
+			subset([&](const auto& interval, const auto& index)
+			{
+				const auto offset = samurai::memory_offset(mesh, {level, interval.start, index});
+				
+				std::transform(a.data() + offset, a.data() + offset + interval.size(), b.data() + offset, b.data() + offset, [alpha](const double ai, const double bi)
+				{
+					return alpha*ai + bi;
+				});
+			});
+		}
+	}
+}
+
+void subset_axpy_all_offsets(benchmark::State& state)
+{
+	auto mesh = init_mesh<2>(1.e-4, 0, 1);
+	
+	std::vector<int> offsets;
+	offsets.reserve(mesh.nb_cells());
+	
+	// I believe this is unfair and should be done in the benchmark loop
+	for (std::size_t level = ((mesh.min_level() > 0) ? mesh.min_level() - 1 : 0); level < mesh.max_level(); ++level)
+	{
+		const auto subset = get_subset(mesh, level);
+		
+		subset([&](const auto& interval, const auto& index)
+		{
+			const auto offset = samurai::memory_offset(mesh, {level, interval.start, index});
+			
+			for (int i=0; i!=int(interval.size()); ++i)
+			{
+				offsets.push_back(offset + i);
+			}
+		});
+	}
+	
+	auto a = samurai::make_scalar_field("a", mesh);
+	auto b = samurai::make_scalar_field("b", mesh);
+	
+	const Kokkos::View<double*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged> host_a(a.data(), mesh.nb_cells());
+	Kokkos::View<double*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged> host_b(b.data(), mesh.nb_cells());
+	
+	const auto device_a = create_mirror_view(host_a);
+	auto device_b = create_mirror_view(host_b);
+	
+	const double alpha = 2.;
+	
+	for (auto _ : state)
+	{		
+		Kokkos::parallel_for("axpy", offsets.size(), KOKKOS_LAMBDA (const int i) 
+		{
+			device_b(offsets[i]) += alpha*device_a(offsets[i]);
+		});
+		Kokkos::fence();
+	}
+}
+
+void subset_axpy_offsets_and_sizes(benchmark::State& state)
+{
+	using team_policy = Kokkos::TeamPolicy<>;
+  using member_type = Kokkos::TeamPolicy<>::member_type;
+	
+	auto mesh = init_mesh<2>(1.e-4, 0, 1);
+	
+	std::vector<std::pair<int, int>> offsets_and_sizes;
+	
+	for (std::size_t level = ((mesh.min_level() > 0) ? mesh.min_level() - 1 : 0); level < mesh.max_level(); ++level)
+	{
+		const auto subset = get_subset(mesh, level);
+		
+		subset([&](const auto& interval, const auto& index)
+		{
+			const auto offset = samurai::memory_offset(mesh, {level, interval.start, index});
+			
+			offsets_and_sizes.emplace_back(offset, int(interval.size()));
+		});
+	}
+	
+	auto a = samurai::make_scalar_field("a", mesh);
+	auto b = samurai::make_scalar_field("b", mesh);
+	
+	const Kokkos::View<double*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged> host_a(a.data(), mesh.nb_cells());
+	Kokkos::View<double*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged> host_b(b.data(), mesh.nb_cells());
+	
+	const auto device_a = create_mirror_view(host_a);
+	auto device_b = create_mirror_view(host_b);
+	
+	const double alpha = 2.;
+	
+	for (auto _ : state)
+	{
+		Kokkos::parallel_for("axpy_outer", team_policy(offsets_and_sizes.size(), Kokkos::AUTO), KOKKOS_LAMBDA(const member_type& member)
+		{
+			const auto& [offset, size] = offsets_and_sizes[member.league_rank()];
+			
+			Kokkos::parallel_for(Kokkos::TeamThreadRange(member, size), [&](const int i)
+			{
+				const int ii = i + offset;
+				
+				device_b(ii) += alpha*device_a(ii);
+			});
+		});
+		Kokkos::fence();
+	}
+}
+
+BENCHMARK(subset_axpy_samurai);
+BENCHMARK(subset_axpy_samurai_stl);
+BENCHMARK(subset_axpy_all_offsets);
+BENCHMARK(subset_axpy_offsets_and_sizes);
+
+////////////////////////////////////////////////////////////////////////
+//// main
+////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char** argv) {
   Kokkos::initialize(argc, argv);
