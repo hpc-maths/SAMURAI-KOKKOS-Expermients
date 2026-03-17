@@ -337,20 +337,6 @@ void subset_axpy_all_offsets(benchmark::State& state)
 	offsets.reserve(mesh.nb_cells());
 	
 	// I believe this is unfair and should be done in the benchmark loop
-	for (std::size_t level = ((mesh.min_level() > 0) ? mesh.min_level() - 1 : 0); level < mesh.max_level(); ++level)
-	{
-		const auto subset = get_subset(mesh, level);
-		
-		subset([&](const auto& interval, const auto& index)
-		{
-			const auto offset = samurai::memory_offset(mesh, {level, interval.start, index});
-			
-			for (int i=0; i!=int(interval.size()); ++i)
-			{
-				offsets.push_back(offset + i);
-			}
-		});
-	}
 	
 	auto a = samurai::make_scalar_field("a", mesh);
 	auto b = samurai::make_scalar_field("b", mesh);
@@ -364,7 +350,23 @@ void subset_axpy_all_offsets(benchmark::State& state)
 	const double alpha = 2.;
 	
 	for (auto _ : state)
-	{		
+	{	
+		offsets.clear();	
+		for (std::size_t level = ((mesh.min_level() > 0) ? mesh.min_level() - 1 : 0); level < mesh.max_level(); ++level)
+		{
+			const auto subset = get_subset(mesh, level);
+			
+			subset([&](const auto& interval, const auto& index)
+			{
+				const auto offset = samurai::memory_offset(mesh, {level, interval.start, index});
+				
+				for (int i=0; i!=int(interval.size()); ++i)
+				{
+					offsets.push_back(offset + i);
+				}
+			});
+		}
+		
 		Kokkos::parallel_for("axpy", offsets.size(), KOKKOS_LAMBDA (const int i) 
 		{
 			device_b(offsets[i]) += alpha*device_a(offsets[i]);
@@ -382,18 +384,6 @@ void subset_axpy_offsets_and_sizes(benchmark::State& state)
 	
 	std::vector<std::pair<int, int>> offsets_and_sizes;
 	
-	for (std::size_t level = ((mesh.min_level() > 0) ? mesh.min_level() - 1 : 0); level < mesh.max_level(); ++level)
-	{
-		const auto subset = get_subset(mesh, level);
-		
-		subset([&](const auto& interval, const auto& index)
-		{
-			const auto offset = samurai::memory_offset(mesh, {level, interval.start, index});
-			
-			offsets_and_sizes.emplace_back(offset, int(interval.size()));
-		});
-	}
-	
 	auto a = samurai::make_scalar_field("a", mesh);
 	auto b = samurai::make_scalar_field("b", mesh);
 	
@@ -407,6 +397,19 @@ void subset_axpy_offsets_and_sizes(benchmark::State& state)
 	
 	for (auto _ : state)
 	{
+		offsets_and_sizes.clear();
+		for (std::size_t level = ((mesh.min_level() > 0) ? mesh.min_level() - 1 : 0); level < mesh.max_level(); ++level)
+		{
+			const auto subset = get_subset(mesh, level);
+			
+			subset([&](const auto& interval, const auto& index)
+			{
+				const auto offset = samurai::memory_offset(mesh, {level, interval.start, index});
+				
+				offsets_and_sizes.emplace_back(offset, int(interval.size()));
+			});
+		}
+	
 		Kokkos::parallel_for("axpy_outer", team_policy(offsets_and_sizes.size(), Kokkos::AUTO), KOKKOS_LAMBDA(const member_type& member)
 		{
 			const auto& [offset, size] = offsets_and_sizes[member.league_rank()];
