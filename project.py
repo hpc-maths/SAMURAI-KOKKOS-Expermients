@@ -36,7 +36,8 @@ compileOptions = [
 	"-Wno-error=deprecated-declarations",
 	"-Wno-error=null-dereference",
 	"-Wno-error=maybe-uninitialized",
-	"-Wno-error=sign-conversion"]
+	"-Wno-error=sign-conversion", 
+	"-Wno-error=conversion"]
 	
 project = symgen.Project("SAMURAI-KOKKOS-Expermients") \
 	.set_cmake_prefix("SAMURAI_KOKKOS") \
@@ -47,19 +48,23 @@ project = symgen.Project("SAMURAI-KOKKOS-Expermients") \
 	\
 	.add_dependency(symgen.Package("samurai") \
 		.set_git("git@github.com:hpc-maths/samurai.git", "main")) \
-	.add_dependency(symgen.Package("Kokkos", "Kokkos")) \
+	.add_dependency(symgen.Package("Kokkos", "kokkos")) \
 	\
-	.add_executable(symgen.Executable("samurai_with_kokkos") \
-		.add_source("src/main.cpp") \
-		.add_dependency("samurai") \
-		.add_dependency("Kokkos", "kokkos"))
+	.add_library(symgen.Library("samurai_kokkos") \
+		.add_source("src/samurai_kokkos_environment.cpp") \
+		.add_source("src/samurai_kokkos_all_offsets_environment.cpp") \
+		.add_public_dependency("samurai") \
+		.add_public_dependency("Kokkos", "kokkos"))
 		
 benchmarks = symgen.SubDirectory("benchmarks") \
 	.add_dependency(symgen.Package("benchmark")) \
 	.add_executable(symgen.Executable("benchmark_axpy") \
 		.add_source("src/benchmark_axpy.cpp")
-		.add_dependency("samurai") \
-		.add_dependency("Kokkos", "kokkos") \
+		.add_dependency("samurai_kokkos") \
+		.add_dependency("benchmark::benchmark")) \
+	.add_executable(symgen.Executable("benchmark_axpy2") \
+		.add_source("src/benchmark_axpy2.cpp")
+		.add_dependency("samurai_kokkos") \
 		.add_dependency("benchmark::benchmark")) \
 
 project.add_sub_directory(benchmarks)

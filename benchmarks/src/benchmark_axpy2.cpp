@@ -1,8 +1,7 @@
-#include <filesystem>
-#include <iostream>
-namespace fs = std::filesystem;
+#include <fmt/format.h>
 
 #include <benchmark/benchmark.h>
+
 #include <samurai/field.hpp>
 #include <samurai/io/hdf5.hpp>
 #include <samurai/io/restart.hpp>
@@ -13,6 +12,11 @@ namespace fs = std::filesystem;
 #include <samurai/uniform_mesh.hpp>
 
 #include <Kokkos_Core.hpp>
+
+#include <samurai_kokkos_all_offsets_environment.hpp>
+#include <samurai_kokkos_environment.hpp>
+#include <samurai_kokkos_scope.hpp>
+
 
 ////////////////////////////////////////////////////////////////////////
 //// Helper functions
@@ -102,11 +106,11 @@ auto init_mesh(double eps, std::size_t direction, std::size_t nb)
 template<samurai::mesh_like Mesh>
 auto get_subset(const Mesh& mesh, const std::size_t level)
 {
-	using mesh_id_t = typename Mesh::mesh_id_t;
-	
-	return samurai::intersection(
-		mesh[mesh_id_t::all_cells][level],
-		samurai::union_(mesh[mesh_id_t::cells][level + 1], mesh[mesh_id_t::cells][level + 2])).on(level);	
+    using mesh_id_t = typename Mesh::mesh_id_t;
+    
+    return samurai::intersection(
+        mesh[mesh_id_t::all_cells][level],
+        samurai::union_(mesh[mesh_id_t::cells][level + 1], mesh[mesh_id_t::cells][level + 2])).on(level);    
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -117,7 +121,7 @@ inline void axpy_samurai(benchmark::State& state)
 {
     auto mesh = init_mesh<2>(1.e-4, 0, 1);
 
-    const auto a = samurai::make_scalar_field("a", mesh);
+    auto a = samurai::make_scalar_field("a", mesh);
     auto b = samurai::make_scalar_field("b", mesh);
 
     const double alpha = 2.;
@@ -139,7 +143,7 @@ inline void axpy_samurai_stl(benchmark::State& state)
 {
     auto mesh = init_mesh<2>(1.e-4, 0, 1);
 
-    const auto a = samurai::make_scalar_field("a", mesh);
+    auto a = samurai::make_scalar_field("a", mesh);
     auto b = samurai::make_scalar_field("b", mesh);
 
     const double alpha = 2.;
@@ -149,7 +153,7 @@ inline void axpy_samurai_stl(benchmark::State& state)
         samurai::for_each_interval(mesh, [&](const auto level, const auto& interval, const auto& index)
         {
             const auto offset = samurai::memory_offset(mesh, {level, interval.start, index});
-
+            
             std::transform(a.data() + offset, a.data() + offset + interval.size(), b.data() + offset, b.data() + offset, [alpha](const double ai, const double bi)
             {
                 return alpha*ai + bi;
@@ -169,64 +173,74 @@ inline void axpy_full(benchmark::State& state)
     Kokkos::View<double*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged> host_b(b.data(), mesh.nb_cells());
 
     // Create device views
-    const auto device_a = create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace(), host_a);
+    auto device_a = create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace(), host_a);
     auto device_b = create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace(), host_b);
 
     const double alpha = 2.;
 
     for (auto _ : state)
-    {
+    {   
         Kokkos::parallel_for("axpy", mesh.nb_cells(), KOKKOS_LAMBDA (const int i)
         {
             device_b(i) += alpha * device_a(i);
         });
         Kokkos::fence();
     }
-
-    // Copy device data back to host
-    Kokkos::deep_copy(host_b, device_b);
 }
 
 inline void axpy_all_offsets(benchmark::State& state)
 {
     auto mesh = init_mesh<2>(1.e-4, 0, 1);
-
-    std::vector<int> offsets;
-    offsets.reserve(mesh.nb_cells());
-
+    
+    SamuraiKokkosAllOffsetsEnvironment& env = Scope<SamuraiKokkosAllOffsetsEnvironment>::getContex();
+    
+    env.clear();
+    env.reserve(mesh.nb_cells());
+    
     samurai::for_each_interval(mesh, [&](const size_t level, const auto& interval, const auto& index)
     {
         const int offset = int(samurai::memory_offset(mesh, {level, interval.start, index}));
 
         for (int i=0; i!=int(interval.size()); ++i)
         {
-            offsets.push_back(offset + i);
+            env.add_offset(offset + i);
         }
     });
-
+    
     auto a = samurai::make_scalar_field("a", mesh);
     auto b = samurai::make_scalar_field("b", mesh);
-
-    const Kokkos::View<double*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged> host_a(a.data(), mesh.nb_cells());
+    
+    Kokkos::View<double*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged> host_a(a.data(), mesh.nb_cells());
     Kokkos::View<double*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged> host_b(b.data(), mesh.nb_cells());
-
-    const auto device_a = create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace(), host_a);
+    
+    auto device_a = create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace(), host_a);
     auto device_b = create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace(), host_b);
-
-    Kokkos::View<int*, Kokkos::DefaultExecutionSpace> device_offsets("device_offsets", offsets.size());
-    Kokkos::deep_copy(device_offsets, Kokkos::View<int*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged>(offsets.data(), offsets.size()));
-
+    
     const double alpha = 2.;
 
     for (auto _ : state)
     {
-        Kokkos::deep_copy(device_offsets, Kokkos::View<int*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged>(offsets.data(), offsets.size()));
-        Kokkos::parallel_for("axpy", offsets.size(), KOKKOS_LAMBDA (const int i)
+		// step 1. fill the offsets
+		env.clear();
+		samurai::for_each_interval(mesh, [&](const size_t level, const auto& interval, const auto& index)
+		{
+			const int offset = int(samurai::memory_offset(mesh, {level, interval.start, index}));
+	
+			for (int i=0; i!=int(interval.size()); ++i)
+			{
+				env.add_offset(offset + i);
+			}
+		});
+		// step 2. copy inputs host -> device
+		env.copy_data_to_host();
+		// step 3. perform axpy
+		const auto device_offsets = env.get_device_offsets();
+		
+		Kokkos::parallel_for("axpy", env.size(), KOKKOS_LAMBDA (const int i)
         {
             device_b(device_offsets[i]) += alpha*device_a(device_offsets[i]);
         });
-        Kokkos::fence();
-    }
+	}
 }
 
 inline void axpy_offsets_and_sizes(benchmark::State& state)
@@ -236,53 +250,53 @@ inline void axpy_offsets_and_sizes(benchmark::State& state)
 
     auto mesh = init_mesh<2>(1.e-4, 0, 1);
     using mesh_id_t = typename decltype(mesh)::mesh_id_t;
-
+    
     std::size_t nb_xintervals = 0;
     samurai::for_each_level(mesh, [&](const size_t level)
     {
         nb_xintervals += mesh[mesh_id_t::cells][level][0].size();
     });
-
-    Kokkos::View<int**, Kokkos::HostSpace> host_offsets_and_sizes("host_offsets_and_sizes", nb_xintervals, 2);
-    std::size_t ind = 0;
-    samurai::for_each_interval(mesh, [&](const size_t level, const auto& interval, const auto& index)
-    {
-        const int offset = int(samurai::memory_offset(mesh, {level, interval.start, index}));
-        host_offsets_and_sizes(ind, 0) = offset;
-        host_offsets_and_sizes(ind, 1) = static_cast<int>(interval.size());
-        ind++;
-    });
-
+    
+    SamuraiKokkosEnvironment& env = Scope<SamuraiKokkosEnvironment>::getContex();
+    
     auto a = samurai::make_scalar_field("a", mesh);
     auto b = samurai::make_scalar_field("b", mesh);
-
-    const Kokkos::View<double*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged> host_a(a.data(), mesh.nb_cells());
+    
+    Kokkos::View<double*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged> host_a(a.data(), mesh.nb_cells());
     Kokkos::View<double*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged> host_b(b.data(), mesh.nb_cells());
-
-    const auto device_a = create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace(), host_a);
+    
+    auto device_a = create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace(), host_a);
     auto device_b = create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace(), host_b);
-
-    auto device_offsets_and_sizes = create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace(), host_offsets_and_sizes);
-
+    
     const double alpha = 2.;
 
     for (auto _ : state)
     {
-        Kokkos::deep_copy(device_offsets_and_sizes, host_offsets_and_sizes);
-        Kokkos::parallel_for("axpy_outer", team_policy(nb_xintervals, Kokkos::AUTO), KOKKOS_LAMBDA(const member_type& member)
+		// step 1. fill the offsets
+		samurai::for_each_interval(mesh, [&](const size_t level, const auto& interval, const auto& index)
+		{
+			const int offset = int(samurai::memory_offset(mesh, {level, interval.start, index}));
+			env.add_offset_and_interval_size(offset, interval.size());
+		});
+		// step 2. copy inputs host -> device
+		env.copy_data_to_host();
+		// step 3. perform axpy
+		const auto device_offsets        = env.get_device_offsets();
+		const auto device_interval_sizes = env.get_device_interval_sizes();
+		
+		Kokkos::parallel_for("axpy_outer", team_policy(nb_xintervals, Kokkos::AUTO), KOKKOS_LAMBDA(const member_type& member)
         {
-            const auto offset = device_offsets_and_sizes(member.league_rank(), 0);
-            const auto size = device_offsets_and_sizes(member.league_rank(), 1);
-
+            const auto offset = device_offsets(member.league_rank());
+            const auto size   = device_interval_sizes(member.league_rank());
+                        
             Kokkos::parallel_for(Kokkos::TeamThreadRange(member, size), [&](const int i)
             {
                 const int ii = i + offset;
 
                 device_b(ii) += alpha*device_a(ii);
             });
-        });
-        Kokkos::fence();
-    }
+		});
+	}
 }
 
 BENCHMARK(axpy_samurai);
@@ -297,19 +311,19 @@ BENCHMARK(axpy_offsets_and_sizes);
 
 inline void subset_axpy_samurai(benchmark::State& state)
 {
-	auto mesh = init_mesh<2>(1.e-4, 0, 1);
-	
-	const auto a = samurai::make_scalar_field("a", mesh);
-	auto b = samurai::make_scalar_field("b", mesh);
-	
-	const double alpha = 2.;
-	
-	for (auto _ : state)
-	{
+    auto mesh = init_mesh<2>(1.e-4, 0, 1);
+
+    auto a = samurai::make_scalar_field("a", mesh);
+    auto b = samurai::make_scalar_field("b", mesh);
+
+    const double alpha = 2.;
+
+    for (auto _ : state)
+    {
 		for (std::size_t level = ((mesh.min_level() > 0) ? mesh.min_level() - 1 : 0); level < mesh.max_level(); ++level)
 		{
 			const auto subset = get_subset(mesh, level);
-			
+		
 			subset([&](const auto& interval, const auto& index)
 			{
 				const auto offset = samurai::memory_offset(mesh, {level, interval.start, index});
@@ -319,24 +333,24 @@ inline void subset_axpy_samurai(benchmark::State& state)
 				}
 			});
 		}
-	}
+    }
 }
 
 inline void subset_axpy_samurai_stl(benchmark::State& state)
 {
-	auto mesh = init_mesh<2>(1.e-4, 0, 1);
-	
-	const auto a = samurai::make_scalar_field("a", mesh);
-	auto b = samurai::make_scalar_field("b", mesh);
-	
-	const double alpha = 2.;
-	
-	for (auto _ : state)
-	{
+    auto mesh = init_mesh<2>(1.e-4, 0, 1);
+
+    auto a = samurai::make_scalar_field("a", mesh);
+    auto b = samurai::make_scalar_field("b", mesh);
+
+    const double alpha = 2.;
+
+    for (auto _ : state)
+    {
 		for (std::size_t level = ((mesh.min_level() > 0) ? mesh.min_level() - 1 : 0); level < mesh.max_level(); ++level)
 		{
 			const auto subset = get_subset(mesh, level);
-			
+		
 			subset([&](const auto& interval, const auto& index)
 			{
 				const auto offset = samurai::memory_offset(mesh, {level, interval.start, index});
@@ -347,107 +361,173 @@ inline void subset_axpy_samurai_stl(benchmark::State& state)
 				});
 			});
 		}
-	}
+    }
 }
 
-inline void subset_axpy_all_offsets(benchmark::State& state)
+inline void subset_axpy_full(benchmark::State& state)
 {
-	auto mesh = init_mesh<2>(1.e-4, 0, 1);
-	
-	std::vector<int> offsets;
-	offsets.reserve(mesh.nb_cells());
-	
-	// I believe this is unfair and should be done in the benchmark loop
-	
-	auto a = samurai::make_scalar_field("a", mesh);
-	auto b = samurai::make_scalar_field("b", mesh);
-	
-	const Kokkos::View<double*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged> host_a(a.data(), mesh.nb_cells());
-	Kokkos::View<double*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged> host_b(b.data(), mesh.nb_cells());
-	
-	const auto device_a = create_mirror_view(host_a);
-	auto device_b = create_mirror_view(host_b);
-	
-	const double alpha = 2.;
-	
-	for (auto _ : state)
-	{	
-		offsets.clear();	
+    auto mesh = init_mesh<2>(1.e-4, 0, 1);
+
+    auto a = samurai::make_scalar_field("a", mesh);
+    auto b = samurai::make_scalar_field("b", mesh);
+
+    const Kokkos::View<double*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged> host_a(a.data(), mesh.nb_cells());
+    Kokkos::View<double*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged> host_b(b.data(), mesh.nb_cells());
+    
+    Kokkos::View<bool*, Kokkos::HostSpace> host_mask("mask", mesh.nb_cells());
+
+    // Create device views
+    auto device_a = create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace(), host_a);
+    auto device_b = create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace(), host_b);
+    
+    auto device_mask = create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace(), host_mask);
+
+    const double alpha = 2.;
+
+    for (auto _ : state)
+    {   
+		// set 1 fill the mask
+		Kokkos::deep_copy(host_mask, false);
 		for (std::size_t level = ((mesh.min_level() > 0) ? mesh.min_level() - 1 : 0); level < mesh.max_level(); ++level)
 		{
 			const auto subset = get_subset(mesh, level);
-			
+		
 			subset([&](const auto& interval, const auto& index)
 			{
 				const auto offset = samurai::memory_offset(mesh, {level, interval.start, index});
 				
 				for (int i=0; i!=int(interval.size()); ++i)
 				{
-					offsets.push_back(offset + i);
+					host_mask(offset + i) = true;
 				}
 			});
 		}
+		Kokkos::deep_copy(device_mask, host_mask);
 		
-		Kokkos::parallel_for("axpy", offsets.size(), KOKKOS_LAMBDA (const int i) 
-		{
-			device_b(offsets[size_t(i)]) += alpha*device_a(offsets[i]);
-		});
-		Kokkos::fence();
-	}
+        Kokkos::parallel_for("axpy", mesh.nb_cells(), KOKKOS_LAMBDA (const int i)
+        {
+            device_b(i) += device_mask(i) * alpha * device_a(i);
+        });
+        Kokkos::fence();
+    }
 }
 
-inline void subset_axpy_offsets_and_sizes(benchmark::State& state)
+inline void subset_axpy_all_offsets(benchmark::State& state)
 {
-	using team_policy = Kokkos::TeamPolicy<>;
-  using member_type = Kokkos::TeamPolicy<>::member_type;
-	
-	auto mesh = init_mesh<2>(1.e-4, 0, 1);
-	
-	std::vector<std::pair<int, int>> offsets_and_sizes;
-	
-	auto a = samurai::make_scalar_field("a", mesh);
-	auto b = samurai::make_scalar_field("b", mesh);
-	
-	const Kokkos::View<double*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged> host_a(a.data(), mesh.nb_cells());
-	Kokkos::View<double*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged> host_b(b.data(), mesh.nb_cells());
-	
-	const auto device_a = create_mirror_view(host_a);
-	auto device_b = create_mirror_view(host_b);
-	
-	const double alpha = 2.;
-	
-	for (auto _ : state)
-	{
-		offsets_and_sizes.clear();
+    auto mesh = init_mesh<2>(1.e-4, 0, 1);
+    
+    SamuraiKokkosAllOffsetsEnvironment& env = Scope<SamuraiKokkosAllOffsetsEnvironment>::getContex();
+    
+    env.reserve(mesh.nb_cells());
+    
+    auto a = samurai::make_scalar_field("a", mesh);
+    auto b = samurai::make_scalar_field("b", mesh);
+    
+    Kokkos::View<double*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged> host_a(a.data(), mesh.nb_cells());
+    Kokkos::View<double*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged> host_b(b.data(), mesh.nb_cells());
+    
+    auto device_a = create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace(), host_a);
+    auto device_b = create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace(), host_b);
+    
+    const double alpha = 2.;
+
+    for (auto _ : state)
+    {
+		// step 1. fill the offsets
+		env.clear();
 		for (std::size_t level = ((mesh.min_level() > 0) ? mesh.min_level() - 1 : 0); level < mesh.max_level(); ++level)
 		{
 			const auto subset = get_subset(mesh, level);
 			
 			subset([&](const auto& interval, const auto& index)
 			{
-				const auto offset = samurai::memory_offset(mesh, {level, interval.start, index});
-				
-				offsets_and_sizes.emplace_back(offset, int(interval.size()));
+				const int offset = int(samurai::memory_offset(mesh, {level, interval.start, index}));
+		
+				for (int i=0; i!=int(interval.size()); ++i)
+				{
+					env.add_offset(offset + i);
+				}
 			});
 		}
-	
-		Kokkos::parallel_for("axpy_outer", team_policy(offsets_and_sizes.size(), Kokkos::AUTO), KOKKOS_LAMBDA(const member_type& member)
+		// step 2. copy inputs host -> device
+		env.copy_data_to_host();
+		// step 3. perform subset_axpy
+		const auto device_offsets = env.get_device_offsets();
+		
+		Kokkos::parallel_for("subset_axpy", env.size(), KOKKOS_LAMBDA (const int i)
+        {
+            device_b(device_offsets[i]) += alpha*device_a(device_offsets[i]);
+        });
+	}
+}
+
+inline void subset_axpy_offsets_and_sizes(benchmark::State& state)
+{
+    using team_policy = Kokkos::TeamPolicy<>;
+    using member_type = Kokkos::TeamPolicy<>::member_type;
+
+    auto mesh = init_mesh<2>(1.e-4, 0, 1);
+    using mesh_id_t = typename decltype(mesh)::mesh_id_t;
+    
+    std::size_t nb_xintervals = 0;
+    samurai::for_each_level(mesh, [&](const size_t level)
+    {
+        nb_xintervals += mesh[mesh_id_t::cells][level][0].size();
+    });
+    
+    SamuraiKokkosEnvironment& env = Scope<SamuraiKokkosEnvironment>::getContex();
+    
+    env.reserve(nb_xintervals);
+    
+    auto a = samurai::make_scalar_field("a", mesh);
+    auto b = samurai::make_scalar_field("b", mesh);
+    
+    Kokkos::View<double*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged> host_a(a.data(), mesh.nb_cells());
+    Kokkos::View<double*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged> host_b(b.data(), mesh.nb_cells());
+    
+    auto device_a = create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace(), host_a);
+    auto device_b = create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace(), host_b);
+    
+    const double alpha = 2.;
+
+    for (auto _ : state)
+    {
+		// step 1. fill the offsets
+		env.clear();
+		for (std::size_t level = ((mesh.min_level() > 0) ? mesh.min_level() - 1 : 0); level < mesh.max_level(); ++level)
 		{
-			const auto& [offset, size] = offsets_and_sizes[member.league_rank()];
+			const auto subset = get_subset(mesh, level);
 			
-			Kokkos::parallel_for(Kokkos::TeamThreadRange(member, size), [&](const int i)
+			subset([&](const auto& interval, const auto& index)
 			{
-				const int ii = i + offset;
-				
-				device_b(ii) += alpha*device_a(ii);
+				const int offset = int(samurai::memory_offset(mesh, {level, interval.start, index}));
+				env.add_offset_and_interval_size(offset, interval.size());
 			});
+		}
+		// step 2. copy inputs host -> device
+		env.copy_data_to_host();
+		// step 3. perform subset_axpy
+		const auto device_offsets        = env.get_device_offsets();
+		const auto device_interval_sizes = env.get_device_interval_sizes();
+		
+		Kokkos::parallel_for("subset_axpy_outer", team_policy(nb_xintervals, Kokkos::AUTO), KOKKOS_LAMBDA(const member_type& member)
+        {
+            const auto offset = device_offsets(member.league_rank());
+            const auto size   = device_interval_sizes(member.league_rank());
+                        
+            Kokkos::parallel_for(Kokkos::TeamThreadRange(member, size), [&](const int i)
+            {
+                const int ii = i + offset;
+
+                device_b(ii) += alpha*device_a(ii);
+            });
 		});
-		Kokkos::fence();
 	}
 }
 
 BENCHMARK(subset_axpy_samurai);
 BENCHMARK(subset_axpy_samurai_stl);
+BENCHMARK(subset_axpy_full);
 BENCHMARK(subset_axpy_all_offsets);
 BENCHMARK(subset_axpy_offsets_and_sizes);
 
@@ -455,12 +535,24 @@ BENCHMARK(subset_axpy_offsets_and_sizes);
 //// main
 ////////////////////////////////////////////////////////////////////////
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv) 
+{
   Kokkos::initialize(argc, argv);
-  std::cout << Kokkos::DefaultExecutionSpace::name() << std::endl;
-  ::benchmark::Initialize(&argc, argv);
-  if (::benchmark::ReportUnrecognizedArguments(argc, argv)) return 1;
-  ::benchmark::RunSpecifiedBenchmarks();
+  {
+	fmt::println("Kokkos default execution space : {}", Kokkos::DefaultExecutionSpace::name());
+	
+	::benchmark::Initialize(&argc, argv);
+	if (::benchmark::ReportUnrecognizedArguments(argc, argv)) { return 1; }
+	
+	SamuraiKokkosEnvironment samuraiKokkosEnv;
+	SamuraiKokkosAllOffsetsEnvironment samuraiKokkosAllOffsetsEnv;
+	
+	Scope<SamuraiKokkosEnvironment> env1(samuraiKokkosEnv);
+	Scope<SamuraiKokkosAllOffsetsEnvironment> env2(samuraiKokkosAllOffsetsEnv);
+	
+	::benchmark::RunSpecifiedBenchmarks();
+  }
   Kokkos::finalize();
-  return 0;
+  
+  return EXIT_SUCCESS;
 }

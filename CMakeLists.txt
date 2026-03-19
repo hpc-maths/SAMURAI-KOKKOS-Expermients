@@ -10,15 +10,9 @@ project(SAMURAI-KOKKOS-Expermients
 	VERSION 1.0.0
 	LANGUAGES CXX)
 
-# Require C++20
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
 ########################################################################
 ####                           Variables                            ####
 ########################################################################
-
-
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 	set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build.")
@@ -28,76 +22,41 @@ endif()
 set(SAMURAI_KOKKOS_SAN_FLAGS -fsanitize=address -fsanitize=undefined -fno-omit-frame-pointer)
 
 set(SAMURAI_KOKKOS_COMMON_COMPILE_OPTIONS
-	-fopenmp
-	#-Wundef
-	-Wvarargs
 	-Wall
-	-Wextra
-	-Winit-self
-	-Wpedantic
-	-Werror
-	-Wconversion
-	-Wuninitialized
-	-Wmissing-declarations
-	-Wsign-conversion
-	-Wshadow
 	-Wcast-align
-	-Wnull-dereference
-	-Wformat=2
-	-flax-vector-conversions
-	-pedantic
-	-pedantic-errors
-	-Wno-error=array-bounds
-	-Wno-c99-extensions
+	-Wconversion
 	-Wdouble-promotion
-	-Wswitch-enum
-	-Wrange-loop-construct
-	-Wnon-virtual-dtor
-	-Wold-style-cast
-	-Woverloaded-virtual
-	-Wvexing-parse
+	-Werror
+	-Wextra
+	-Wformat=2
+	-Winit-self
+	-Wmissing-declarations
+	-Wno-c99-extensions
 	-Wno-error=array-bounds
-	-Wno-error=unknown-pragmas
-	-Wno-error=shadow
+	-Wno-error=conversion
 	-Wno-error=deprecated-declarations
-	-Wno-error=null-dereference
 	-Wno-error=maybe-uninitialized
+	-Wno-error=null-dereference
+	-Wno-error=shadow
 	-Wno-error=sign-conversion
-	-fopenmp
-	#-Wundef
-	-Wvarargs
-	-Wall
-	-Wextra
-	-Winit-self
-	-Wpedantic
-	-Werror
-	-Wconversion
-	-Wuninitialized
-	-Wmissing-declarations
-	-Wsign-conversion
-	-Wshadow
-	-Wcast-align
-	-Wnull-dereference
-	-Wformat=2
-	-flax-vector-conversions
-	-pedantic
-	-pedantic-errors
-	-Wno-error=array-bounds
-	-Wno-c99-extensions
-	-Wdouble-promotion
-	-Wswitch-enum
-	-Wrange-loop-construct
+	-Wno-error=unknown-pragmas
 	-Wnon-virtual-dtor
+	-Wnull-dereference
 	-Wold-style-cast
 	-Woverloaded-virtual
+	-Wpedantic
+	-Wrange-loop-construct
+	-Wshadow
+	-Wsign-conversion
+	-Wswitch-enum
+	-Wundef
+	-Wuninitialized
+	-Wvarargs
 	-Wvexing-parse
-	-Wno-error=array-bounds
-	-Wno-error=unknown-pragmas
-	-Wno-error=shadow
-	-Wno-error=deprecated-declarations
-	-Wno-error=null-dereference
-	-Wno-error=maybe-uninitialized
-	-Wno-error=sign-conversion)
+	-flax-vector-conversions
+	-fopenmp
+	-pedantic
+	-pedantic-errors)
 
 set(SAMURAI_KOKKOS_GNU_CXX_COMPILE_OPTIONS
 	${SAMURAI_KOKKOS_COMMON_COMPILE_OPTIONS})
@@ -117,11 +76,10 @@ option(SAMURAI_KOKKOS_USE_NATIVE_OPT    "Enable -march=native -mtune=native" OFF
 ####                          Dependencies                          ####
 ########################################################################
 
-
-find_package(Kokkos REQUIRED)
+find_package(Kokkos REQUIRED COMPONENTS kokkos)
 
 include(FetchContent)
-FetchContent_Declare(samurai GIT_REPOSITORY https://github.com/hpc-maths/samurai.git GIT_TAG main)
+FetchContent_Declare(samurai GIT_REPOSITORY git@github.com:hpc-maths/samurai.git GIT_TAG main FIND_PACKAGE_ARGS NAMES samurai)
 
 FetchContent_MakeAvailable(samurai)
 
@@ -139,13 +97,15 @@ add_library(SAMURAI-KOKKOS-Expermients_include INTERFACE)
 
 add_library(SAMURAI-KOKKOS-Expermients_options INTERFACE)
 
-add_executable(samurai_with_kokkos)
+add_library(samurai_kokkos)
 
 ########################################################################
 ####                            Sources                             ####
 ########################################################################
 
-target_sources(samurai_with_kokkos PRIVATE src/main.cpp)
+target_sources(samurai_kokkos PRIVATE
+	src/samurai_kokkos_environment.cpp
+	src/samurai_kokkos_all_offsets_environment.cpp)
 
 target_include_directories(SAMURAI-KOKKOS-Expermients_include INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
 
@@ -153,11 +113,11 @@ target_include_directories(SAMURAI-KOKKOS-Expermients_include INTERFACE $<BUILD_
 ####                              Link                              ####
 ########################################################################
 
-target_link_libraries(samurai_with_kokkos
-	PRIVATE SAMURAI-KOKKOS-Expermients_include
-	PRIVATE SAMURAI-KOKKOS-Expermients_options
-	PRIVATE samurai
-	PRIVATE Kokkos::kokkos)
+target_link_libraries(samurai_kokkos
+	PUBLIC SAMURAI-KOKKOS-Expermients_include
+	PUBLIC SAMURAI-KOKKOS-Expermients_options
+	PUBLIC samurai
+	PUBLIC Kokkos::kokkos)
 
 ########################################################################
 ####                        Compile options                         ####
