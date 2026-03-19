@@ -10,9 +10,15 @@ project(SAMURAI-KOKKOS-Expermients
 	VERSION 1.0.0
 	LANGUAGES CXX)
 
+# Require C++20
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 ########################################################################
 ####                           Variables                            ####
 ########################################################################
+
+
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 	set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build.")
@@ -23,7 +29,7 @@ set(SAMURAI_KOKKOS_SAN_FLAGS -fsanitize=address -fsanitize=undefined -fno-omit-f
 
 set(SAMURAI_KOKKOS_COMMON_COMPILE_OPTIONS
 	-fopenmp
-	-Wundef
+	#-Wundef
 	-Wvarargs
 	-Wall
 	-Wextra
@@ -58,7 +64,7 @@ set(SAMURAI_KOKKOS_COMMON_COMPILE_OPTIONS
 	-Wno-error=maybe-uninitialized
 	-Wno-error=sign-conversion
 	-fopenmp
-	-Wundef
+	#-Wundef
 	-Wvarargs
 	-Wall
 	-Wextra
@@ -111,10 +117,11 @@ option(SAMURAI_KOKKOS_USE_NATIVE_OPT    "Enable -march=native -mtune=native" OFF
 ####                          Dependencies                          ####
 ########################################################################
 
+
 find_package(Kokkos REQUIRED)
 
 include(FetchContent)
-FetchContent_Declare(samurai GIT_REPOSITORY git@github.com:hpc-maths/samurai.git GIT_TAG main FIND_PACKAGE_ARGS NAMES samurai)
+FetchContent_Declare(samurai GIT_REPOSITORY https://github.com/hpc-maths/samurai.git GIT_TAG main)
 
 FetchContent_MakeAvailable(samurai)
 
