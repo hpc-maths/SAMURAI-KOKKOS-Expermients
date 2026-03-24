@@ -66,6 +66,10 @@ benchmarks = symgen.SubDirectory("benchmarks") \
 		.add_source("src/benchmark_axpy2.cpp")
 		.add_dependency("samurai_kokkos") \
 		.add_dependency("benchmark::benchmark")) \
+	.add_executable(symgen.Executable("benchmark_projection") \
+		.add_source("src/benchmark_projection.cpp")
+		.add_dependency("samurai_kokkos") \
+		.add_dependency("benchmark::benchmark")) \
 
 project.add_sub_directory(benchmarks)
 

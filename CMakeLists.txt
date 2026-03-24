@@ -58,11 +58,9 @@ set(SAMURAI_KOKKOS_COMMON_COMPILE_OPTIONS
 	-pedantic
 	-pedantic-errors)
 
-set(SAMURAI_KOKKOS_GNU_CXX_COMPILE_OPTIONS
-	${SAMURAI_KOKKOS_COMMON_COMPILE_OPTIONS})
+set(SAMURAI_KOKKOS_GNU_CXX_COMPILE_OPTIONS ${SAMURAI_KOKKOS_COMMON_COMPILE_OPTIONS})
 
-set(SAMURAI_KOKKOS_Clang_CXX_COMPILE_OPTIONS
-	${SAMURAI_KOKKOS_COMMON_COMPILE_OPTIONS})
+set(SAMURAI_KOKKOS_Clang_CXX_COMPILE_OPTIONS ${SAMURAI_KOKKOS_COMMON_COMPILE_OPTIONS})
 
 ########################################################################
 ####                            Options                             ####
@@ -82,6 +80,15 @@ include(FetchContent)
 FetchContent_Declare(samurai GIT_REPOSITORY git@github.com:hpc-maths/samurai.git GIT_TAG main FIND_PACKAGE_ARGS NAMES samurai)
 
 FetchContent_MakeAvailable(samurai)
+
+# Mark samurai's include directories as system (suppress warnings)
+if(TARGET samurai)
+    get_target_property(_inc_dirs samurai INTERFACE_INCLUDE_DIRECTORIES)
+    if(_inc_dirs)
+        # Set system includes without removing the original ones
+        set_target_properties(samurai PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_inc_dirs}")
+    endif()
+endif()
 
 ########################################################################
 ####                         SubDirectories                         ####
