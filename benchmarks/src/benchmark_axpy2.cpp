@@ -386,7 +386,6 @@ inline void subset_axpy_full(benchmark::State& state)
 
     for (auto _ : state)
     {   
-		// set 1 fill the mask
 		Kokkos::deep_copy(host_mask, false);
 		for (std::size_t level = ((mesh.min_level() > 0) ? mesh.min_level() - 1 : 0); level < mesh.max_level(); ++level)
 		{

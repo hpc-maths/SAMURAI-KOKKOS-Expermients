@@ -49,12 +49,15 @@ project = symgen.Project("SAMURAI-KOKKOS-Expermients") \
 	.add_dependency(symgen.Package("samurai") \
 		.set_git("git@github.com:hpc-maths/samurai.git", "main")) \
 	.add_dependency(symgen.Package("Kokkos", "kokkos")) \
+	.add_dependency(symgen.Package("KokkosKernels", "kokkoskernels")) \
 	\
 	.add_library(symgen.Library("samurai_kokkos") \
 		.add_source("src/samurai_kokkos_environment.cpp") \
 		.add_source("src/samurai_kokkos_all_offsets_environment.cpp") \
+		.add_source("src/csr_matrix.cpp") \
 		.add_public_dependency("samurai") \
-		.add_public_dependency("Kokkos", "kokkos"))
+		.add_public_dependency("Kokkos", "kokkos") \
+		.add_public_dependency("KokkosKernels", "kokkoskernels"))
 		
 benchmarks = symgen.SubDirectory("benchmarks") \
 	.add_dependency(symgen.Package("benchmark")) \

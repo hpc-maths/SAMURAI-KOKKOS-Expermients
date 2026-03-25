@@ -75,20 +75,12 @@ option(SAMURAI_KOKKOS_USE_NATIVE_OPT    "Enable -march=native -mtune=native" OFF
 ########################################################################
 
 find_package(Kokkos REQUIRED COMPONENTS kokkos)
+find_package(KokkosKernels REQUIRED COMPONENTS kokkoskernels)
 
 include(FetchContent)
 FetchContent_Declare(samurai GIT_REPOSITORY git@github.com:hpc-maths/samurai.git GIT_TAG main FIND_PACKAGE_ARGS NAMES samurai)
 
 FetchContent_MakeAvailable(samurai)
-
-# Mark samurai's include directories as system (suppress warnings)
-if(TARGET samurai)
-    get_target_property(_inc_dirs samurai INTERFACE_INCLUDE_DIRECTORIES)
-    if(_inc_dirs)
-        # Set system includes without removing the original ones
-        set_target_properties(samurai PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_inc_dirs}")
-    endif()
-endif()
 
 ########################################################################
 ####                         SubDirectories                         ####
@@ -112,7 +104,8 @@ add_library(samurai_kokkos)
 
 target_sources(samurai_kokkos PRIVATE
 	src/samurai_kokkos_environment.cpp
-	src/samurai_kokkos_all_offsets_environment.cpp)
+	src/samurai_kokkos_all_offsets_environment.cpp
+	src/csr_matrix.cpp)
 
 target_include_directories(SAMURAI-KOKKOS-Expermients_include INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
 
@@ -124,7 +117,8 @@ target_link_libraries(samurai_kokkos
 	PUBLIC SAMURAI-KOKKOS-Expermients_include
 	PUBLIC SAMURAI-KOKKOS-Expermients_options
 	PUBLIC samurai
-	PUBLIC Kokkos::kokkos)
+	PUBLIC Kokkos::kokkos
+	PUBLIC KokkosKernels::kokkoskernels)
 
 ########################################################################
 ####                        Compile options                         ####
