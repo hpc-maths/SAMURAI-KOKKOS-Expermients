@@ -31,7 +31,6 @@ set(SAMURAI_KOKKOS_COMMON_COMPILE_OPTIONS
 	-Wformat=2
 	-Winit-self
 	-Wmissing-declarations
-	-Wno-c99-extensions
 	-Wno-error=array-bounds
 	-Wno-error=conversion
 	-Wno-error=deprecated-declarations

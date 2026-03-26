@@ -22,7 +22,6 @@ compileOptions = [
 	"-pedantic",
 	"-pedantic-errors",
 	"-Wno-error=array-bounds",
-	"-Wno-c99-extensions",
 	"-Wdouble-promotion",
 	"-Wswitch-enum",
 	"-Wrange-loop-construct",
@@ -40,6 +39,8 @@ compileOptions = [
 	"-Wno-error=conversion",
 	"-Wno-error=undef",
 	"-Wno-error=old-style-cast"]
+	
+clangOnlyCompileOptions = ["-Wno-c99-extensions"]
 	
 project = symgen.Project("SAMURAI-KOKKOS-Expermients") \
 	.set_cmake_prefix("SAMURAI_KOKKOS") \
