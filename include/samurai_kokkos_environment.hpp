@@ -12,7 +12,7 @@ public:
 	using HostOffsets         = typename DeviceOffsets::host_mirror_type;
 	using HostIntervalSizes   = typename DeviceIntervalSizes::host_mirror_type;
 	
-	void clear() { m_size = {}; }
+	void clear() { m_size = 0; }
 	
 	void reserve(const std::size_t new_size);
 	
