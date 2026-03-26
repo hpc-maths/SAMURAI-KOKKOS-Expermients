@@ -48,6 +48,7 @@ project = symgen.Project("SAMURAI-KOKKOS-Expermients") \
 	.add_standard(symgen.Language.CXX, 20) \
 	\
 	.add_compile_options(symgen.Language.CXX, [symgen.Compiler.GNU, symgen.Compiler.CLANG], compileOptions) \
+	.add_compile_options(symgen.Language.CXX, symgen.Compiler.CLANG, clangOnlyCompileOptions) \
 	\
 	.add_dependency(symgen.Package("samurai") \
 		.set_git("git@github.com:hpc-maths/samurai.git", "main")) \

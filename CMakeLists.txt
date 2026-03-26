@@ -61,7 +61,8 @@ set(SAMURAI_KOKKOS_COMMON_COMPILE_OPTIONS
 
 set(SAMURAI_KOKKOS_GNU_CXX_COMPILE_OPTIONS ${SAMURAI_KOKKOS_COMMON_COMPILE_OPTIONS})
 
-set(SAMURAI_KOKKOS_Clang_CXX_COMPILE_OPTIONS ${SAMURAI_KOKKOS_COMMON_COMPILE_OPTIONS})
+set(SAMURAI_KOKKOS_Clang_CXX_COMPILE_OPTIONS ${SAMURAI_KOKKOS_COMMON_COMPILE_OPTIONS}
+	-Wno-c99-extensions)
 
 ########################################################################
 ####                            Options                             ####
