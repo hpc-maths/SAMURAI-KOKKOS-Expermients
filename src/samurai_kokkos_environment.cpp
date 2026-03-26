@@ -37,11 +37,11 @@ void SamuraiKokkosEnvironment::copy_data_to_host()
 		
 		m_device_capacity = m_size;
 	}
-	auto devive_offsets_subview = Kokkos::subview(m_device_offsets, Kokkos::make_pair(std::size_t{}, m_size));
-	auto host_offsets_subview   = Kokkos::subview(m_host_offsets,   Kokkos::make_pair(std::size_t{}, m_size));
+	auto devive_offsets_subview = Kokkos::subview(m_device_offsets, Kokkos::make_pair(std::size_t(), m_size));
+	auto host_offsets_subview   = Kokkos::subview(m_host_offsets,   Kokkos::make_pair(std::size_t(), m_size));
 	
-	auto device_interval_sizes_subview = Kokkos::subview(m_device_interval_sizes, Kokkos::make_pair(std::size_t{}, m_size));
-	auto host_interval_sizes_subview   = Kokkos::subview(m_host_interval_sizes,   Kokkos::make_pair(std::size_t{}, m_size));
+	auto device_interval_sizes_subview = Kokkos::subview(m_device_interval_sizes, Kokkos::make_pair(std::size_t(), m_size));
+	auto host_interval_sizes_subview   = Kokkos::subview(m_host_interval_sizes,   Kokkos::make_pair(std::size_t(), m_size));
 	
 	Kokkos::deep_copy(devive_offsets_subview,        host_offsets_subview);
 	Kokkos::deep_copy(device_interval_sizes_subview, host_interval_sizes_subview);

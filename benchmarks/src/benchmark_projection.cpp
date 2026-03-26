@@ -18,6 +18,7 @@
 
 #include <samurai_kokkos_all_offsets_environment.hpp>
 #include <samurai_kokkos_environment.hpp>
+#include <samurai_nd_kokkos_environment.hpp>
 #include <samurai_kokkos_scope.hpp>
 #include <csr_matrix.hpp>
 
@@ -214,11 +215,11 @@ inline void projection_samurai_spmv(benchmark::State& state)
 	using DeviceColIndex = typename DeviceSpMat::index_type::non_const_type;
 	using DeviceValue    = typename DeviceSpMat::values_type::non_const_type;
 	
-	constexpr std::size_t nSrcOffstes = 1ULL << (dim - 1);
+	constexpr std::size_t nSrcOffsets = 1ULL << (dim - 1);
 	
 	auto mesh = init_mesh<dim>(1.e-4, 0, 1);
 	
-	const std::size_t nnz = 2*n_comp*nSrcOffstes*mesh.nb_cells();
+	const std::size_t nnz = 2*n_comp*nSrcOffsets*mesh.nb_cells();
 
     auto a = samurai::make_vector_field<double, n_comp>("src", mesh);
     auto b = samurai::make_vector_field<double, n_comp>("dst", mesh);	
@@ -300,19 +301,19 @@ BENCHMARK(projection_samurai_spmv<3, 1>);
 BENCHMARK(projection_samurai_spmv<3, 3>);
 
 template<std::size_t dim, std::size_t n_comp>
-inline void projection_samurai_spmv_manual(benchmark::State& state)
+inline void projection_samurai_spmv_manual_full(benchmark::State& state)
 {	
-	using SpMat  = CsrMatrix<double>;
+	using SpMat  = CsrMatrix<std::integral_constant<double, double(1)>>;
 	using Size   = typename SpMat::Size;
 	using Offset = typename SpMat::Offset;
-	using Scalar = typename SpMat::Scalar;
+	using Scalar = typename SpMat::Scalar::value_type;
 	using Entry  = typename SpMat::Entry;
 
-	constexpr std::size_t nSrcOffstes = 1ULL << (dim - 1);
+	constexpr std::size_t nSrcOffsets = 1ULL << (dim - 1);
 	
 	auto mesh = init_mesh<2>(1.e-4, 0, 1);
 	
-	const std::size_t nnz = 2*n_comp*nSrcOffstes*mesh.nb_cells();
+	const std::size_t nnz = 2*n_comp*nSrcOffsets*mesh.nb_cells();
 
     auto a = samurai::make_vector_field<double, n_comp>("src", mesh);
     auto b = samurai::make_vector_field<double, n_comp>("dst", mesh);
@@ -356,8 +357,8 @@ inline void projection_samurai_spmv_manual(benchmark::State& state)
 							assert((src_offset + 2*i + 1) * n_comp + n < mesh.nb_cells()*n_comp);
 							assert((dst_offsets + i) * n_comp + n < mesh.nb_cells()*n_comp);
 							
-							entries.emplace_back((dst_offsets + i) * n_comp + n, (src_offset + 2*i    ) * n_comp + n, 1.);
-							entries.emplace_back((dst_offsets + i) * n_comp + n, (src_offset + 2*i + 1) * n_comp + n, 1.);
+							entries.emplace_back((dst_offsets + i) * n_comp + n, (src_offset + 2*i    ) * n_comp + n, std::integral_constant<double, double(1)>{});
+							entries.emplace_back((dst_offsets + i) * n_comp + n, (src_offset + 2*i + 1) * n_comp + n, std::integral_constant<double, double(1)>{});
 						}
 					}
 				}
@@ -389,11 +390,220 @@ inline void projection_samurai_spmv_manual(benchmark::State& state)
 	}
 }
 
+BENCHMARK(projection_samurai_spmv_manual_full<1, 1>);
+BENCHMARK(projection_samurai_spmv_manual_full<2, 1>);
+BENCHMARK(projection_samurai_spmv_manual_full<2, 2>);
+BENCHMARK(projection_samurai_spmv_manual_full<3, 1>);
+BENCHMARK(projection_samurai_spmv_manual_full<3, 3>);
+
+template<std::size_t dim, std::size_t n_comp>
+inline void projection_samurai_spmv_manual(benchmark::State& state)
+{	
+	using SpMat  = CsrMatrix<std::integral_constant<double, double(1)>>;
+	using Size   = typename SpMat::Size;
+	using Offset = typename SpMat::Offset;
+	using Scalar = typename SpMat::Scalar::value_type;
+	using Entry  = typename SpMat::Entry;
+
+	constexpr std::size_t nSrcOffsets = 1ULL << (dim - 1);
+	
+	auto mesh = init_mesh<2>(1.e-4, 0, 1);
+	
+	const std::size_t nnz = 2*nSrcOffsets*mesh.nb_cells();
+
+    auto a = samurai::make_vector_field<double, n_comp>("src", mesh);
+    auto b = samurai::make_vector_field<double, n_comp>("dst", mesh);
+	
+    SpMat projMat(mesh.nb_cells(), nnz);
+    
+    std::vector<Entry> entries(nnz);
+	
+	Kokkos::View<Scalar*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged> host_a(a.data(), n_comp*mesh.nb_cells());
+    Kokkos::View<Scalar*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged> host_b(b.data(), n_comp*mesh.nb_cells());
+    
+    Kokkos::View<Size*,   Kokkos::HostSpace, Kokkos::MemoryUnmanaged> host_row_ptr(projMat.row_ptr().data(), projMat.row_ptr().size());
+    Kokkos::View<Offset*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged> host_col_idx(projMat.col_idx().data(), projMat.col_idx().size());
+    
+    auto device_a = create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace(), host_a);
+    auto device_b = create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace(), host_b);
+    
+	auto device_row_ptr = create_mirror_view(Kokkos::DefaultExecutionSpace(), host_row_ptr);
+    auto device_col_idx = create_mirror_view(Kokkos::DefaultExecutionSpace(), host_col_idx);
+
+	for (auto _ : state)
+    {   
+		// step 1: construct the sparse matrix
+		entries.clear();
+		for (std::size_t level = mesh.max_level(); level >= mesh.min_level(); --level)
+		{
+			const auto projection_subset = get_projection_subset(mesh, level);
+			
+			projection_subset([&](const auto& interval, const auto& index)
+			{
+				const auto src_offsets = get_src_offsets(mesh, level-1, interval.start, index);
+				const auto dst_offsets = samurai::memory_offset(mesh, {level-1, interval.start, index});
+				
+				for (int i=0; i!=int(interval.size()); ++i) 
+				{					
+					for (const auto& src_offset : src_offsets)
+					{
+						assert(src_offset + 2*i     < mesh.nb_cells());
+						assert(src_offset + 2*i + 1 < mesh.nb_cells());
+						assert(dst_offsets + i      < mesh.nb_cells());
+						
+						entries.emplace_back(dst_offsets + i, src_offset + 2*i,     std::integral_constant<double, double(1)>{});
+						entries.emplace_back(dst_offsets + i, src_offset + 2*i + 1, std::integral_constant<double, double(1)>{});
+					}
+				}
+			});
+		}
+		projMat.initFromEntriesWithoutReallocate(entries);
+		// step 2: copy the projection sp matrix
+		auto device_col_idx_subview = Kokkos::subview(device_col_idx, Kokkos::make_pair(Size{}, projMat.nnz()));
+		
+		auto host_col_idx_subview = Kokkos::subview(host_col_idx, Kokkos::make_pair(Size{}, projMat.nnz()));
+		
+		Kokkos::deep_copy(device_row_ptr, host_row_ptr);
+		Kokkos::deep_copy(device_col_idx_subview, host_col_idx_subview);
+		
+		constexpr double inv = 1.0 / static_cast<double>(1ULL << dim);
+		// setp 3: spmv 
+		
+		Kokkos::parallel_for("spmv_fixed", projMat.nRows(), KOKKOS_LAMBDA(const Size i)
+		{		
+			std::array<Scalar, n_comp> acc;
+			acc.fill(Scalar{});
+			
+			for (Size j = device_row_ptr(i); j != device_row_ptr(i+1); ++j)
+			{
+				for (std::size_t n = 0; n != n_comp; ++n)
+				{
+					assert(Size(device_col_idx_subview(j) * n_comp + n) < Size(mesh.nb_cells()*n_comp));
+					acc[n] += device_a(device_col_idx_subview(j) * n_comp + n);
+				}
+			}
+			for (std::size_t n = 0; n != n_comp; ++n)
+			{
+				assert(Size(i * n_comp + n) < Size(mesh.nb_cells()*n_comp));
+				device_b(i* n_comp + n) = inv*acc[n];
+			}
+		});
+	}
+}
+
 BENCHMARK(projection_samurai_spmv_manual<1, 1>);
 BENCHMARK(projection_samurai_spmv_manual<2, 1>);
 BENCHMARK(projection_samurai_spmv_manual<2, 2>);
 BENCHMARK(projection_samurai_spmv_manual<3, 1>);
 BENCHMARK(projection_samurai_spmv_manual<3, 3>);
+
+template<std::size_t dim, std::size_t n_comp>
+inline void projection_samurai_offsets_and_sizes(benchmark::State& state)
+{
+	using team_policy = Kokkos::TeamPolicy<>;
+    using member_type = Kokkos::TeamPolicy<>::member_type;
+
+	constexpr std::size_t nSrcOffsets = 1ULL << (dim - 1);
+	
+	auto mesh = init_mesh<dim>(1.e-4, 0, 1);
+    
+	using mesh_id_t = typename decltype(mesh)::mesh_id_t;
+    
+    SamuraiKokkosEnvironment& dst_env = Scope<SamuraiKokkosEnvironment>::getContex();
+    SamuraiNDKokkosEnvironment<nSrcOffsets>& src_env = Scope<SamuraiNDKokkosEnvironment<nSrcOffsets>>::getContex();
+    
+    std::size_t nb_xintervals = 0;
+    samurai::for_each_level(mesh, [&](const size_t level)
+    {
+        nb_xintervals += mesh[mesh_id_t::cells][level][0].size();
+    });
+    
+    dst_env.clear();
+    dst_env.reserve(nb_xintervals);
+    
+    src_env.clear();
+    src_env.reserve(nSrcOffsets*nb_xintervals);
+    
+    auto a = samurai::make_vector_field<double, n_comp>("src", mesh);
+    auto b = samurai::make_vector_field<double, n_comp>("dst", mesh);
+    
+    Kokkos::View<double*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged> host_a(a.data(), n_comp*mesh.nb_cells());
+    Kokkos::View<double*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged> host_b(b.data(), n_comp*mesh.nb_cells());
+    
+    auto device_a = create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace(), host_a);
+    auto device_b = create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace(), host_b);
+    
+    for (auto _ : state)
+    {
+		// step 1. fill the offsets
+		for (std::size_t level = mesh.max_level(); level >= mesh.min_level(); --level)
+		{
+			const auto projection_subset = get_projection_subset(mesh, level);
+			
+			projection_subset([&](const auto& interval, const auto& index)
+			{
+				const auto src_offsets = get_src_offsets(mesh, level-1, interval.start, index);
+				const auto dst_offsets = samurai::memory_offset(mesh, {level-1, interval.start, index});
+				
+				src_env.add_offset_and_interval_size(src_offsets, interval.size());
+				dst_env.add_offset_and_interval_size(dst_offsets, interval.size());
+			});
+		}
+		// step 2. copy inputs host -> device
+		src_env.copy_data_to_host();
+		dst_env.copy_data_to_host();
+		// step 3. projection
+		
+		const auto device_src_offsets        = src_env.get_device_offsets();
+		const auto device_dst_offsets        = dst_env.get_device_offsets();
+		const auto device_dst_interval_sizes = dst_env.get_device_interval_sizes();
+		
+		constexpr double inv = 1.0 / static_cast<double>(1ULL << dim);
+		
+		Kokkos::parallel_for("projection", team_policy(src_env.size(), Kokkos::AUTO), KOKKOS_LAMBDA(const member_type& member)
+        {
+			const auto rank = member.league_rank();
+			
+            const auto dst_offset  = device_dst_offsets(rank);
+            const auto size        = device_dst_interval_sizes(rank);
+            
+            std::array<double, n_comp> sum;
+            
+            Kokkos::parallel_for(Kokkos::TeamThreadRange(member, size), [&](const std::size_t i)
+            {
+				sum.fill(0);
+				
+                const std::size_t ii = i + dst_offset;
+                
+                for (std::size_t srcOffsetId = 0; srcOffsetId != nSrcOffsets; ++srcOffsetId)
+				{				
+					const std::size_t jj = device_src_offsets(rank, srcOffsetId) + 2*i;
+					
+					for (std::size_t n = 0; n != n_comp; ++n)
+					{
+						assert(jj*n_comp + n < mesh.nb_cells()*n_comp);
+						assert((jj + 1)*n_comp + n < mesh.nb_cells()*n_comp);
+						
+						sum[n] += device_a(jj*n_comp + n) + device_a((jj + 1)*n_comp + n);
+					}
+				}
+                for (std::size_t n = 0; n != n_comp; ++n)
+                {					
+					assert(ii*n_comp + n < mesh.nb_cells()*n_comp);
+							
+					device_b(ii*n_comp + n) = sum[n] * inv;
+				}
+            });
+		});
+		
+	}
+}
+
+BENCHMARK(projection_samurai_offsets_and_sizes<1, 1>);
+BENCHMARK(projection_samurai_offsets_and_sizes<2, 1>);
+BENCHMARK(projection_samurai_offsets_and_sizes<2, 2>);
+BENCHMARK(projection_samurai_offsets_and_sizes<3, 1>);
+BENCHMARK(projection_samurai_offsets_and_sizes<3, 3>);
 
 ////////////////////////////////////////////////////////////////////////
 //// main
@@ -409,10 +619,14 @@ int main(int argc, char** argv)
 	if (::benchmark::ReportUnrecognizedArguments(argc, argv)) { return 1; }
 	
 	SamuraiKokkosEnvironment samuraiKokkosEnv;
-	SamuraiKokkosAllOffsetsEnvironment samuraiKokkosAllOffsetsEnv;
+	SamuraiNDKokkosEnvironment<1> samurai1DKokkosEnv;
+	SamuraiNDKokkosEnvironment<2> samurai2DKokkosEnv;
+	SamuraiNDKokkosEnvironment<4> samurai3DKokkosEnv;
 	
 	Scope<SamuraiKokkosEnvironment> env1(samuraiKokkosEnv);
-	Scope<SamuraiKokkosAllOffsetsEnvironment> env2(samuraiKokkosAllOffsetsEnv);
+	Scope<SamuraiNDKokkosEnvironment<1>> env2(samurai1DKokkosEnv);
+	Scope<SamuraiNDKokkosEnvironment<2>> env3(samurai2DKokkosEnv);
+	Scope<SamuraiNDKokkosEnvironment<4>> env4(samurai3DKokkosEnv);
 	
 	::benchmark::RunSpecifiedBenchmarks();
   }
