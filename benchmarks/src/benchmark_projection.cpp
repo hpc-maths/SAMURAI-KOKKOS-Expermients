@@ -170,10 +170,10 @@ inline void projection_samurai(benchmark::State& state)
 				constexpr double inv = 1.0 / static_cast<double>(1ULL << dim);
 				
 				for (std::size_t i=0; i!=interval.size(); ++i)
-				{
+				{	
 					std::array<double, n_comp> sum;
 					sum.fill(0);
-					
+								
 					for (const auto& src_offset : src_offsets)
 					{
 						for (std::size_t n = 0; n != n_comp; ++n)
@@ -217,28 +217,30 @@ inline void projection_samurai_spmv(benchmark::State& state)
 	constexpr std::size_t nSrcOffstes = 1ULL << (dim - 1);
 	
 	auto mesh = init_mesh<dim>(1.e-4, 0, 1);
+	
+	const std::size_t nnz = 2*n_comp*nSrcOffstes*mesh.nb_cells();
 
     auto a = samurai::make_vector_field<double, n_comp>("src", mesh);
     auto b = samurai::make_vector_field<double, n_comp>("dst", mesh);	
     
-    HostSpMat projMat(mesh.nb_cells(), nSrcOffstes*mesh.nb_cells());
+    HostSpMat projMat(n_comp*mesh.nb_cells(), nnz);
     
-    Kokkos::View<double*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged> host_a(a.data(), mesh.nb_cells());
-    Kokkos::View<double*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged> host_b(b.data(), mesh.nb_cells());
+    Kokkos::View<double*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged> host_a(a.data(), n_comp*mesh.nb_cells());
+    Kokkos::View<double*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged> host_b(b.data(), n_comp*mesh.nb_cells());
     
 	Kokkos::View<const Size*,   Kokkos::HostSpace, Kokkos::MemoryUnmanaged> host_row_ptr(std::as_const(projMat).row_ptr().data(), std::as_const(projMat).row_ptr().size());
 	Kokkos::View<const Offset*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged> host_col_idx(std::as_const(projMat).col_idx().data(), std::as_const(projMat).col_idx().size());
 	Kokkos::View<const double*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged> host_values (std::as_const(projMat).values().data(),  std::as_const(projMat).values().size());
     
-    std::vector<Entry> entries(projMat.nnz());
+    std::vector<Entry> entries(nnz);
 	
     // Create device views
     auto device_a = create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace(), host_a);
     auto device_b = create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace(), host_b);
     
     DeviceRowPtr   device_row_ptr("row_ptr", projMat.row_ptr().size());
-    DeviceColIndex device_col_idx("col_idx", projMat.col_idx().size());
-    DeviceValue    device_values ("values",  projMat.values().size());
+    DeviceColIndex device_col_idx("col_idx", nnz);
+    DeviceValue    device_values ("values",  nnz);
     
     for (auto _ : state)
     {   
@@ -255,13 +257,13 @@ inline void projection_samurai_spmv(benchmark::State& state)
 				
 				for (int i=0; i!=int(interval.size()); ++i) 
 				{
-					std::array<double, n_comp> sum;
-					sum.fill(0);
-					
 					for (const auto& src_offset : src_offsets)
 					{
 						for (std::size_t n = 0; n != n_comp; ++n)
 						{
+							assert((src_offset + 2*i) * n_comp + n < mesh.nb_cells()*n_comp);
+							assert((dst_offsets + i) * n_comp + n < mesh.nb_cells()*n_comp);
+							
 							entries.emplace_back((dst_offsets + i) * n_comp + n, (src_offset + 2*i    ) * n_comp + n, 1.);
 							entries.emplace_back((dst_offsets + i) * n_comp + n, (src_offset + 2*i + 1) * n_comp + n, 1.);
 						}
@@ -281,7 +283,7 @@ inline void projection_samurai_spmv(benchmark::State& state)
 		Kokkos::deep_copy(device_col_idx_subview, host_col_idx_subview);
 		Kokkos::deep_copy(device_values_subview,  host_values_subview);
 		
-		KokkosSparse::CrsMatrix<double, Offset, Kokkos::DefaultExecutionSpace> device_projMat("proj_mat", mesh.nb_cells(), mesh.nb_cells(), projMat.nnz(), device_values_subview, device_row_ptr, device_col_idx_subview);
+		KokkosSparse::CrsMatrix<double, Offset, Kokkos::DefaultExecutionSpace> device_projMat("proj_mat", projMat.nRows(), projMat.nRows(), projMat.nnz(), device_values_subview, device_row_ptr, device_col_idx_subview);
 		
 		constexpr double inv = 1.0 / static_cast<double>(1ULL << dim);
 		
@@ -296,6 +298,102 @@ BENCHMARK(projection_samurai_spmv<2, 1>);
 BENCHMARK(projection_samurai_spmv<2, 2>);
 BENCHMARK(projection_samurai_spmv<3, 1>);
 BENCHMARK(projection_samurai_spmv<3, 3>);
+
+template<std::size_t dim, std::size_t n_comp>
+inline void projection_samurai_spmv_manual(benchmark::State& state)
+{	
+	using SpMat  = CsrMatrix<double>;
+	using Size   = typename SpMat::Size;
+	using Offset = typename SpMat::Offset;
+	using Scalar = typename SpMat::Scalar;
+	using Entry  = typename SpMat::Entry;
+
+	constexpr std::size_t nSrcOffstes = 1ULL << (dim - 1);
+	
+	auto mesh = init_mesh<2>(1.e-4, 0, 1);
+	
+	const std::size_t nnz = 2*n_comp*nSrcOffstes*mesh.nb_cells();
+
+    auto a = samurai::make_vector_field<double, n_comp>("src", mesh);
+    auto b = samurai::make_vector_field<double, n_comp>("dst", mesh);
+	
+    SpMat projMat(n_comp*mesh.nb_cells(), nnz);
+    
+    std::vector<Entry> entries(nnz);
+	
+	Kokkos::View<Scalar*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged> host_a(a.data(), n_comp*mesh.nb_cells());
+    Kokkos::View<Scalar*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged> host_b(b.data(), n_comp*mesh.nb_cells());
+    
+    Kokkos::View<Size*,   Kokkos::HostSpace, Kokkos::MemoryUnmanaged> host_row_ptr(projMat.row_ptr().data(), projMat.row_ptr().size());
+    Kokkos::View<Offset*, Kokkos::HostSpace, Kokkos::MemoryUnmanaged> host_col_idx(projMat.col_idx().data(), projMat.col_idx().size());
+    
+    auto device_a = create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace(), host_a);
+    auto device_b = create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace(), host_b);
+    
+	auto device_row_ptr = create_mirror_view(Kokkos::DefaultExecutionSpace(), host_row_ptr);
+    auto device_col_idx = create_mirror_view(Kokkos::DefaultExecutionSpace(), host_col_idx);
+
+	for (auto _ : state)
+    {   
+		// step 1: construct the sparse matrix
+		entries.clear();
+		for (std::size_t level = mesh.max_level(); level >= mesh.min_level(); --level)
+		{
+			const auto projection_subset = get_projection_subset(mesh, level);
+			
+			projection_subset([&](const auto& interval, const auto& index)
+			{
+				const auto src_offsets = get_src_offsets(mesh, level-1, interval.start, index);
+				const auto dst_offsets = samurai::memory_offset(mesh, {level-1, interval.start, index});
+				
+				for (int i=0; i!=int(interval.size()); ++i) 
+				{					
+					for (const auto& src_offset : src_offsets)
+					{
+						for (std::size_t n = 0; n != n_comp; ++n)
+						{
+							assert((src_offset + 2*i    ) * n_comp + n < mesh.nb_cells()*n_comp);
+							assert((src_offset + 2*i + 1) * n_comp + n < mesh.nb_cells()*n_comp);
+							assert((dst_offsets + i) * n_comp + n < mesh.nb_cells()*n_comp);
+							
+							entries.emplace_back((dst_offsets + i) * n_comp + n, (src_offset + 2*i    ) * n_comp + n, 1.);
+							entries.emplace_back((dst_offsets + i) * n_comp + n, (src_offset + 2*i + 1) * n_comp + n, 1.);
+						}
+					}
+				}
+			});
+		}
+		projMat.initFromEntriesWithoutReallocate(entries);
+		// step 2: copy the projection sp matrix
+		auto device_col_idx_subview = Kokkos::subview(device_col_idx, Kokkos::make_pair(Size{}, projMat.nnz()));
+		
+		auto host_col_idx_subview = Kokkos::subview(host_col_idx, Kokkos::make_pair(Size{}, projMat.nnz()));
+		
+		Kokkos::deep_copy(device_row_ptr, host_row_ptr);
+		Kokkos::deep_copy(device_col_idx_subview, host_col_idx_subview);
+		
+		constexpr double inv = 1.0 / static_cast<double>(1ULL << dim);
+		// setp 3: spmv 
+		
+		Kokkos::parallel_for("spmv_fixed", projMat.nRows(), KOKKOS_LAMBDA(const Size i)
+		{		
+			Scalar acc{};
+			for (Size j = device_row_ptr(i); j != device_row_ptr(i+1); ++j)
+			{
+				assert(Size(device_col_idx_subview(j)) < Size(mesh.nb_cells()*n_comp));
+				acc += device_a(device_col_idx_subview(j));
+			}
+			assert(Size(i) < Size(mesh.nb_cells()*n_comp));
+			device_b(i) = inv*acc;
+		});
+	}
+}
+
+BENCHMARK(projection_samurai_spmv_manual<1, 1>);
+BENCHMARK(projection_samurai_spmv_manual<2, 1>);
+BENCHMARK(projection_samurai_spmv_manual<2, 2>);
+BENCHMARK(projection_samurai_spmv_manual<3, 1>);
+BENCHMARK(projection_samurai_spmv_manual<3, 3>);
 
 ////////////////////////////////////////////////////////////////////////
 //// main
