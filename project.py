@@ -37,7 +37,8 @@ compileOptions = [
 	"-Wno-error=null-dereference",
 	"-Wno-error=maybe-uninitialized",
 	"-Wno-error=sign-conversion", 
-	"-Wno-error=conversion"]
+	"-Wno-error=conversion",
+	"-Wno-error=undef"]
 	
 project = symgen.Project("SAMURAI-KOKKOS-Expermients") \
 	.set_cmake_prefix("SAMURAI_KOKKOS") \

@@ -39,6 +39,7 @@ set(SAMURAI_KOKKOS_COMMON_COMPILE_OPTIONS
 	-Wno-error=null-dereference
 	-Wno-error=shadow
 	-Wno-error=sign-conversion
+	-Wno-error=undef
 	-Wno-error=unknown-pragmas
 	-Wnon-virtual-dtor
 	-Wnull-dereference
