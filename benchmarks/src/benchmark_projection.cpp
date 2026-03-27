@@ -45,9 +45,9 @@ auto init_mesh(double eps, std::size_t direction, std::size_t nb)
     std::size_t min_level   = 4;
     std::size_t start_level = 8;
     //~ std::size_t max_level   = (dim == 2) ? 14 : 8;
-    //~ std::size_t max_level   = 14;
+    std::size_t max_level   = 14;
     //~ std::size_t max_level   = 10;
-    std::size_t max_level   = 8;
+    //~ std::size_t max_level   = 8;
     std::size_t jump        = max_level - start_level;
 
     xt::xtensor_fixed<double, xt::xshape<dim>> min_corner;
@@ -173,7 +173,7 @@ inline void projection_samurai(benchmark::State& state)
 				
 				for (std::size_t i=0; i!=interval.size(); ++i)
 				{	
-					Kokkos::Array<double, NComp> sum{}
+					Kokkos::Array<double, n_comp> sum{}
 								
 					for (const auto& src_offset : src_offsets)
 					{
@@ -475,7 +475,7 @@ inline void projection_samurai_spmv_manual(benchmark::State& state)
 		
 		Kokkos::parallel_for("spmv_fixed", projMat.nRows(), KOKKOS_LAMBDA(const Size i)
 		{		
-			Kokkos::Array<Scalar, NComp> acc{};
+			Kokkos::Array<Scalar, n_comp> acc{};
 			
 			for (Size j = device_row_ptr(i); j != device_row_ptr(i+1); ++j)
 			{
