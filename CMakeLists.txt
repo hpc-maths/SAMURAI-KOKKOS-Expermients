@@ -34,6 +34,7 @@ set(SAMURAI_KOKKOS_COMMON_COMPILE_OPTIONS
 	-Wno-error=array-bounds
 	-Wno-error=conversion
 	-Wno-error=deprecated-declarations
+	-Wno-error=extra-semi
 	-Wno-error=maybe-uninitialized
 	-Wno-error=null-dereference
 	-Wno-error=old-style-cast

@@ -1,4 +1,5 @@
 #include <samurai_kokkos_all_offsets_environment.hpp>
+#include <utils.hpp>
 
 #include <fmt/format.h>
 
@@ -29,14 +30,13 @@ void SamuraiKokkosAllOffsetsEnvironment::add_offset(const int offset)
 
 void SamuraiKokkosAllOffsetsEnvironment::copy_data_to_host()
 {	
+
 	if (m_size > m_device_capacity)
 	{
 		Kokkos::resize(m_device_offsets, m_size);
 		
 		m_device_capacity = m_size;
 	}
-	auto devive_offsets_subview = Kokkos::subview(m_device_offsets, Kokkos::make_pair(std::size_t(), m_size));
-	auto host_offsets_subview   = Kokkos::subview(m_host_offsets,   Kokkos::make_pair(std::size_t(), m_size));
 	
-	Kokkos::deep_copy(devive_offsets_subview, host_offsets_subview);
+	partial_deep_copy(m_device_offsets, m_host_offsets, m_size);
 }

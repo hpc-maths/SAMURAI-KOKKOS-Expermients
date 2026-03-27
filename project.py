@@ -30,15 +30,16 @@ compileOptions = [
 	"-Woverloaded-virtual",
 	"-Wvexing-parse",
 	"-Wno-error=array-bounds",
-	"-Wno-error=unknown-pragmas",
-	"-Wno-error=shadow",
-	"-Wno-error=deprecated-declarations",
-	"-Wno-error=null-dereference",
-	"-Wno-error=maybe-uninitialized",
-	"-Wno-error=sign-conversion", 
 	"-Wno-error=conversion",
+	"-Wno-error=deprecated-declarations",
+	"-Wno-error=maybe-uninitialized",
+	"-Wno-error=null-dereference",
+	"-Wno-error=old-style-cast",
+	"-Wno-error=shadow",
+	"-Wno-error=sign-conversion",
 	"-Wno-error=undef",
-	"-Wno-error=old-style-cast"]
+	"-Wno-error=unknown-pragmas",
+	"-Wno-error=extra-semi"]
 	
 clangOnlyCompileOptions = ["-Wno-c99-extensions"]
 	
