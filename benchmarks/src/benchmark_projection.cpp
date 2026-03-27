@@ -173,7 +173,7 @@ inline void projection_samurai(benchmark::State& state)
 				
 				for (std::size_t i=0; i!=interval.size(); ++i)
 				{	
-					Kokkos::Array<double, n_comp> sum{}
+					Kokkos::Array<double, n_comp> sum{};
 								
 					for (const auto& src_offset : src_offsets)
 					{
