@@ -45,7 +45,7 @@ auto init_mesh(double eps, std::size_t direction, std::size_t nb)
     std::size_t min_level   = 4;
     std::size_t start_level = 8;
     //~ std::size_t max_level   = (dim == 2) ? 14 : 8;
-    std::size_t max_level   = 14;
+    std::size_t max_level   = 12;
     //~ std::size_t max_level   = 10;
     //~ std::size_t max_level   = 8;
     std::size_t jump        = max_level - start_level;
