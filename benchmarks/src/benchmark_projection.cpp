@@ -173,8 +173,7 @@ inline void projection_samurai(benchmark::State& state)
 				
 				for (std::size_t i=0; i!=interval.size(); ++i)
 				{	
-					std::array<double, n_comp> sum;
-					sum.fill(0);
+					double sum[n_comp] = {};
 								
 					for (const auto& src_offset : src_offsets)
 					{
@@ -472,8 +471,7 @@ inline void projection_samurai_spmv_manual(benchmark::State& state)
 		
 		Kokkos::parallel_for("spmv_fixed", projMat.nRows(), KOKKOS_LAMBDA(const Size i)
 		{		
-			std::array<Scalar, n_comp> acc;
-			acc.fill(Scalar{});
+			Scalar sum[n_comp] = {};
 			
 			for (Size j = device_row_ptr(i); j != device_row_ptr(i+1); ++j)
 			{
@@ -568,11 +566,9 @@ inline void projection_samurai_offsets_and_sizes(benchmark::State& state)
             const auto dst_offset  = device_dst_offsets(rank);
             const auto size        = device_dst_interval_sizes(rank);
             
-            std::array<double, n_comp> sum;
-            
             Kokkos::parallel_for(Kokkos::TeamThreadRange(member, size), [&](const std::size_t i)
             {
-				sum.fill(0);
+				double sum[n_comp] = {};
 				
                 const std::size_t ii = i + dst_offset;
                 
