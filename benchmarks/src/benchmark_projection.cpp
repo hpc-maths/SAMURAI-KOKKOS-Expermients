@@ -471,7 +471,7 @@ inline void projection_samurai_spmv_manual(benchmark::State& state)
 		
 		Kokkos::parallel_for("spmv_fixed", projMat.nRows(), KOKKOS_LAMBDA(const Size i)
 		{		
-			Scalar sum[n_comp] = {};
+			Scalar acc[n_comp] = {};
 			
 			for (Size j = device_row_ptr(i); j != device_row_ptr(i+1); ++j)
 			{
