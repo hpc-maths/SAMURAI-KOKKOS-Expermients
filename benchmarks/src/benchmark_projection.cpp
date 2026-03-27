@@ -265,8 +265,8 @@ inline void projection_samurai_spmv(benchmark::State& state)
 						#pragma unroll
 						for (std::size_t n = 0; n != n_comp; ++n)
 						{
-							KOKKOS_ASSERT((src_offset + 2*i) * n_comp + n < mesh.nb_cells()*n_comp);
-							KOKKOS_ASSERT((dst_offsets + i) * n_comp + n < mesh.nb_cells()*n_comp);
+							//~ KOKKOS_ASSERT((src_offset + 2*i) * n_comp + n < mesh.nb_cells()*n_comp);
+							//~ KOKKOS_ASSERT((dst_offsets + i) * n_comp + n < mesh.nb_cells()*n_comp);
 							
 							entries.emplace_back((dst_offsets + i) * n_comp + n, (src_offset + 2*i    ) * n_comp + n, 1.);
 							entries.emplace_back((dst_offsets + i) * n_comp + n, (src_offset + 2*i + 1) * n_comp + n, 1.);
@@ -357,9 +357,9 @@ inline void projection_samurai_spmv_manual_full(benchmark::State& state)
 						#pragma unroll
 						for (std::size_t n = 0; n != n_comp; ++n)
 						{
-							KOKKOS_ASSERT((src_offset + 2*i    ) * n_comp + n < mesh.nb_cells()*n_comp);
-							KOKKOS_ASSERT((src_offset + 2*i + 1) * n_comp + n < mesh.nb_cells()*n_comp);
-							KOKKOS_ASSERT((dst_offsets + i) * n_comp + n < mesh.nb_cells()*n_comp);
+							//~ KOKKOS_ASSERT((src_offset + 2*i    ) * n_comp + n < mesh.nb_cells()*n_comp);
+							//~ KOKKOS_ASSERT((src_offset + 2*i + 1) * n_comp + n < mesh.nb_cells()*n_comp);
+							//~ KOKKOS_ASSERT((dst_offsets + i) * n_comp + n < mesh.nb_cells()*n_comp);
 							
 							entries.emplace_back((dst_offsets + i) * n_comp + n, (src_offset + 2*i    ) * n_comp + n, std::integral_constant<double, double(1)>{});
 							entries.emplace_back((dst_offsets + i) * n_comp + n, (src_offset + 2*i + 1) * n_comp + n, std::integral_constant<double, double(1)>{});
@@ -385,10 +385,10 @@ inline void projection_samurai_spmv_manual_full(benchmark::State& state)
 			Scalar acc{};
 			for (Size j = device_row_ptr(i); j != device_row_ptr(i+1); ++j)
 			{
-				KOKKOS_ASSERT(Size(device_col_idx_subview(j)) < Size(mesh.nb_cells()*n_comp));
+				//~ KOKKOS_ASSERT(Size(device_col_idx_subview(j)) < Size(mesh.nb_cells()*n_comp));
 				acc += device_a(device_col_idx_subview(j));
 			}
-			KOKKOS_ASSERT(Size(i) < Size(mesh.nb_cells()*n_comp));
+			//~ KOKKOS_ASSERT(Size(i) < Size(mesh.nb_cells()*n_comp));
 			device_b(i) = inv*acc;
 		});
 	}
@@ -451,9 +451,9 @@ inline void projection_samurai_spmv_manual(benchmark::State& state)
 				{					
 					for (const auto& src_offset : src_offsets)
 					{
-						KOKKOS_ASSERT(src_offset + 2*i     < mesh.nb_cells());
-						KOKKOS_ASSERT(src_offset + 2*i + 1 < mesh.nb_cells());
-						KOKKOS_ASSERT(dst_offsets + i      < mesh.nb_cells());
+						//~ KOKKOS_ASSERT(src_offset + 2*i     < mesh.nb_cells());
+						//~ KOKKOS_ASSERT(src_offset + 2*i + 1 < mesh.nb_cells());
+						//~ KOKKOS_ASSERT(dst_offsets + i      < mesh.nb_cells());
 						
 						entries.emplace_back(dst_offsets + i, src_offset + 2*i,     std::integral_constant<double, double(1)>{});
 						entries.emplace_back(dst_offsets + i, src_offset + 2*i + 1, std::integral_constant<double, double(1)>{});
@@ -482,14 +482,14 @@ inline void projection_samurai_spmv_manual(benchmark::State& state)
 				#pragma unroll
 				for (std::size_t n = 0; n != n_comp; ++n)
 				{
-					KOKKOS_ASSERT(Size(device_col_idx_subview(j) * n_comp + n) < Size(mesh.nb_cells()*n_comp));
+					//~ KOKKOS_ASSERT(Size(device_col_idx_subview(j) * n_comp + n) < Size(mesh.nb_cells()*n_comp));
 					acc[n] += device_a(device_col_idx_subview(j) * n_comp + n);
 				}
 			}
 			#pragma unroll
 			for (std::size_t n = 0; n != n_comp; ++n)
 			{
-				KOKKOS_ASSERT(Size(i * n_comp + n) < Size(mesh.nb_cells()*n_comp));
+				//~ KOKKOS_ASSERT(Size(i * n_comp + n) < Size(mesh.nb_cells()*n_comp));
 				device_b(i* n_comp + n) = inv*acc[n];
 			}
 		});
@@ -585,8 +585,8 @@ inline void projection_samurai_offsets_and_sizes(benchmark::State& state)
 					#pragma unroll
 					for (std::size_t n = 0; n != n_comp; ++n)
 					{
-						KOKKOS_ASSERT(jj*n_comp + n < mesh.nb_cells()*n_comp);
-						KOKKOS_ASSERT((jj + 1)*n_comp + n < mesh.nb_cells()*n_comp);
+						//~ KOKKOS_ASSERT(jj*n_comp + n < mesh.nb_cells()*n_comp);
+						//~ KOKKOS_ASSERT((jj + 1)*n_comp + n < mesh.nb_cells()*n_comp);
 						
 						sum[n] += device_a(jj*n_comp + n) + device_a((jj + 1)*n_comp + n);
 					}
@@ -594,7 +594,7 @@ inline void projection_samurai_offsets_and_sizes(benchmark::State& state)
 				#pragma unroll
                 for (std::size_t n = 0; n != n_comp; ++n)
                 {					
-					KOKKOS_ASSERT(ii*n_comp + n < mesh.nb_cells()*n_comp);
+					//~ KOKKOS_ASSERT(ii*n_comp + n < mesh.nb_cells()*n_comp);
 							
 					device_b(ii*n_comp + n) = sum[n] * inv;
 				}
